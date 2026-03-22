@@ -237,13 +237,7 @@ App starts
 
 ## UI Kit
 
-Every visual primitive in the app comes from `core/ui/`. Raw Flutter widgets are never used directly.
-
-### Why
-
-Consistency and enforcement. If `Text` is allowed, one developer uses `Text`, another uses `UIKText`, the font scale is now inconsistent, and there's no single place to change it. If `ElevatedButton` is allowed, one screen has a spinner during loading, another doesn't. If `showModalBottomSheet` is allowed, every caller reimplements the drag handle, the padding, and the border radius differently.
-
-The rule is simple: if a `UIKit` equivalent exists, use it. If you need something it doesn't support, extend it — don't go around it.
+Project specific UI components are defined in `core/ui/`.
 
 ### `UIKButton`
 
