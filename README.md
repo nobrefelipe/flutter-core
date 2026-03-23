@@ -161,6 +161,61 @@ class RewardsController {
 }
 ```
 
+### `PersistedAtom<T>`
+
+An `AsyncAtom` that automatically persists its state to SharedPreferences. Extends `AsyncAtom` with two behaviours:
+
+1. **Instant hydration** — on construction, immediately loads cached data and emits `Success` before any HTTP call or stream connects. The user sees content on the first frame.
+2. **Auto-save** — on every `Success` emit, writes to disk (throttled by `saveThrottle` to avoid hammering SharedPreferences on fast streams).
+
+```dart
+final deliveryStops = PersistedAtom<List<DeliveryStopModel>>(
+  key: 'delivery_stops',
+  fromJson: DeliveryStopModel.fromJsonToList,
+  toJson: DeliveryStopModel.toJsonList,
+);
+```
+
+Every model used with `PersistedAtom` needs serialization methods — use `fromJson`/`toJson` for single objects or `fromJsonToList`/`toJsonList` for lists. These are the same static methods used by `APIRequest`.
+
+**Usage in the view** is identical to `AsyncAtom` — no changes needed:
+
+```dart
+deliveryStops(
+  success: (stops) => StopsList(stops),
+  loading: StopsShimmer.new,
+  failure: (msg) => ErrorView(msg),
+)
+```
+
+**Works transparently with streams** — every emission that reaches `emit` is automatically saved to cache:
+
+```dart
+deliveryStops.listenTo(
+  _service.stopsStream(),
+  onError: (_) async => deliveryStops.persistNow(), // flush before retry
+);
+```
+
+**Offline behaviour:** if the HTTP call fails but cached data is available, the atom stays in `Success` — the screen keeps showing the last known state silently. Pair with a global offline banner rather than per-screen stale logic.
+
+**Keys must be unique** across the app. In debug mode, duplicate keys print a warning to the console. Use a consistent naming convention: `'delivery_stops'`, `'user_profile'`, `'notifications_list'`.
+
+**Logout:** `reset()` clears both the in-memory state (back to `Idle`) and the cached data on disk. Called automatically by `resetAllAtoms()` — no manual wiring needed.
+
+**Force flush:** call `persistNow()` to bypass the throttle window and guarantee the latest state survives an app kill:
+
+```dart
+// App going to background
+AppLifecycleState.paused → deliveryStops.persistNow()
+
+// Stream disconnecting
+deliveryStops.listenTo(deltaStream, onError: (_) async {
+  await deliveryStops.persistNow();
+  // then retry...
+});
+```
+
 ---
 
 ## HTTP Layer
