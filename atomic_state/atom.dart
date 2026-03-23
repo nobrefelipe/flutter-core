@@ -32,12 +32,6 @@ class Atom<T> extends ValueNotifier<T> {
     Widget Function(T value) builder, {
     Widget fallback = const SizedBox(),
   }) {
-    assert(
-      T == bool || T == String || _isList<T>(),
-      'Atom.call() should only be used with Atom<bool>, Atom<String>, or Atom<List>. '
-      'For async data use AsyncAtom instead.',
-    );
-
     return ValueListenableBuilder(
       valueListenable: this,
       builder: (_, value, __) {
@@ -49,5 +43,3 @@ class Atom<T> extends ValueNotifier<T> {
     );
   }
 }
-
-bool _isList<T>() => <T>[] is List;

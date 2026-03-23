@@ -8,9 +8,10 @@ sealed class Result<T> {
   factory Result.failure(String message) = Failure<T>;
 
   // Use this getter to return the error insead of casting the result to Failure in the view.
-  String get errorMessage {
-    return this is Failure ? (this as Failure).message : '';
-  }
+  String get errorMessage => switch (this) {
+    Failure(:final message) => message,
+    _ => '',
+  };
 }
 
 // class Initial<T> extends Result<T> {
