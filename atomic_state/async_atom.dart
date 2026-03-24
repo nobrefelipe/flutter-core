@@ -28,7 +28,13 @@ class AsyncAtom<T> extends ValueNotifier<Result<T>> {
 
   // ─── Core emit ───────────────────────────────────────────────────────────
 
-  void emit(Result<T> state) => value = state;
+  void emit(Result<T> state) {
+    assert(() {
+      debugPrint('⚡ $runtimeType → ${state.runtimeType}');
+      return true;
+    }());
+    value = state;
+  }
 
   /// Call the atom directly as a widget.
   /// Only [success] is required. Defaults:
