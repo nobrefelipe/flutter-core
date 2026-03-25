@@ -1,0 +1,59 @@
+---
+description: Data model patterns for this Flutter app
+globs: lib/models/**/*.dart
+alwaysApply: false
+---
+
+# Models
+
+Plain Dart classes in `lib/models/`. No codegen packages (no json_serializable, no freezed).
+
+## Standard pattern
+```dart
+class RewardModel {
+  final String id;
+  final String brand;
+  final bool isActive;
+  final String? promoCode; // nullable only when API can genuinely return null
+
+  RewardModel({required this.id, required this.brand, required this.isActive, this.promoCode});
+
+  static RewardModel fromJson(dynamic json) => RewardModel(
+    id: Helper.getString(json['id']),
+    brand: Helper.getString(json['brand']),
+    isActive: Helper.getBool(json['is_active']),
+    promoCode: Helper.getStringOrNull(json['promo_code']),
+  );
+
+  static List<RewardModel> fromJsonToList(dynamic json) {
+    if (json == null || json is! List) return [];
+    return json.map((item) => fromJson(item)).toList();
+  }
+
+  @override
+  String toString() => 'RewardModel(id: $id, brand: $brand, isActive: $isActive)';
+}
+```
+
+## Helper methods for parsing
+Always use `Helper.get*()` — never raw casts:
+
+| Method | Returns |
+|---|---|
+| `Helper.getString(value)` | String ('' on failure) |
+| `Helper.getStringOrNull(value)` | String? |
+| `Helper.getInt(value)` | int (0 on failure) |
+| `Helper.getIntOrNull(value)` | int? |
+| `Helper.getDouble(value)` | double (0.0 on failure) |
+| `Helper.getDoubleOrNull(value)` | double? |
+| `Helper.getBool(value)` | bool (handles "true", "1", 1) |
+| `Helper.getList(value)` | List ([] on failure) |
+| `Helper.getMap(value)` | Map<String, dynamic> ({} on failure) |
+
+## Rules
+- `fromJson` is always `static` and accepts `dynamic` (not `Map<String, dynamic>`)
+- `fromJsonToList` always guards against null and non-List
+- Non-nullable by default; `?` only when API genuinely returns null
+- No `toJson()` unless the model is sent back to the API
+- No business logic — pure data containers
+- Always include `toString()`

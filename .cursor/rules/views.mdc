@@ -1,0 +1,86 @@
+---
+description: View patterns for this Flutter app
+globs: lib/views/**/*.dart
+alwaysApply: false
+---
+
+# Views
+
+Views call controller methods and render atoms — no logic, no state management.
+
+## Standard pattern
+```dart
+class RewardsView extends StatelessWidget {
+  static final _controller = RewardsController();
+
+  @override
+  Widget build(BuildContext context) {
+    _controller.loadRewards();
+
+    return Scaffold(
+      body: rewards(
+        success: RewardsList.new,
+        failure: ErrorText.new,
+        loading: RewardsShimmer.new,
+      ),
+    );
+  }
+}
+```
+
+## Calling controller methods
+```dart
+// fire and forget — view reacts via atom
+ElevatedButton(
+  onPressed: _controller.refresh,
+  child: const Text('Refresh'),
+)
+
+// when the view needs to react to the result directly (snackbar, navigation)
+final result = await _controller.createPreOrder(id: id);
+if (result is Success) {
+  ScaffoldMessenger.of(context).showSnackBar(...);
+}
+```
+
+## Local UI state
+```dart
+final isSelected = Atom(false);
+
+// render conditionally
+isSelected((_) => const SelectedIndicator())
+
+// with fallback
+isSelected(
+  (_) => const SelectedIndicator(),
+  fallback: const UnselectedIndicator(),
+)
+
+// when you need the value
+searchQuery((value) => Text(value))
+```
+
+## Widget convention
+Widgets used as constructor references must accept the value as a single positional argument:
+```dart
+// correct
+class RewardsList extends StatelessWidget {
+  const RewardsList(this.rewards, {super.key});
+  final List<RewardModel> rewards;
+}
+
+// wrong — named param, cannot be passed as constructor reference
+class RewardsList extends StatelessWidget {
+  const RewardsList({super.key, required this.rewards});
+}
+```
+
+## Rules
+- `StatefulWidget` only for animation controllers or focus nodes — not for state management
+- Controller as static field: `static final _controller = FeatureController()`
+- Call `loadData()` in `build()` — safe because controllers return early if cached
+- Never use `setState` for app state
+- Never put business logic in views
+- Never use `BuildContext` in controllers or services
+- Extract sub-widgets early to avoid deep nesting
+- `const` constructors wherever possible

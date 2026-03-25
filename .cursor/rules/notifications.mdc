@@ -1,0 +1,113 @@
+---
+description: Notification system — OneSignal push notifications with local storage
+globs: ["lib/core/notifications/**/*.dart", "lib/notifications/**/*.dart"]
+alwaysApply: false
+---
+
+# Notifications
+
+Push notification system using OneSignal. All infrastructure, including tap routing, lives in `core/notifications/`, but routing stays app-agnostic by injecting paths from outside core.
+
+## File structure
+```
+lib/
+  core/
+    notifications/
+      notification_types.dart            # NotificationType enum + data classes + AppNotification
+      notification_storage.dart          # SharedPreferences persistence
+      notification_service.dart          # OneSignal singleton
+      notification_router.dart           # Route map injected via configure()
+      foreground_notification_banner.dart
+      notifications.dart                 # Barrel export
+```
+
+---
+
+## NotificationType
+
+icon and color live on the enum — no utility class needed.
+
+```dart
+notification.type.icon   // IconData
+notification.type.color  // Color
+```
+
+### Adding a new notification type
+1. Add to NotificationType enum with string value
+2. Add icon and color switch cases
+3. Create NotificationData subclass with fromJson using Helper.get*()
+4. Add to NotificationData.fromJson factory switch
+5. Handle in NotificationRouter.route() switch
+6. Add serialization in NotificationStorage._dataToJson()
+
+---
+
+## NotificationService
+
+Singleton. Wire up the tap handler after initialization:
+
+```dart
+// In AuthBuilder after Authenticated
+await NotificationService.instance.initialize(appId: Env.oneSignalAppId, context: context);
+NotificationService.instance.onNotificationTapped = (n) => NotificationRouter.route(context, n);
+await NotificationService.instance.setupUserAfterAuth();
+
+// On logout
+await NotificationService.instance.clearUserData();
+```
+
+The onNotificationTapped callback keeps core/ decoupled from app routes.
+
+### Available methods
+All return Result<T>:
+- getNotifications()              Result<List<AppNotification>>
+- getUnreadCount()                Result<int>
+- markNotificationAsRead(id)      Result<void>
+- clearAllNotifications()         Result<void>
+- areNotificationsEnabled()       Result<bool>
+- requestPermission()             Result<bool>
+- getPlayerId()                   Result<String?>
+
+---
+
+## NotificationRouter
+
+Routes notification taps to GoRouter paths using a map configured from outside core. Never called from views.
+
+```dart
+// Configure once after authentication (e.g. in AuthBuilder)
+NotificationRouter.configure({
+  NotificationType.paymentReceived: '/home',
+  NotificationType.moneyRequest: '/home',
+  NotificationType.newLearningVideo: '/learning',
+  NotificationType.customCommunication: '/home',
+});
+
+NotificationService.instance.onNotificationTapped =
+    (n) => NotificationRouter.route(context, n);
+```
+
+`route` looks up the path for `notification.type`, falls back to `/home` if none is registered, and calls `context.go(path, extra: notification.data)`.
+
+---
+
+## NotificationStorage
+
+Static methods only — no instantiation. All return Result<T>.
+
+---
+
+## ForegroundNotificationBanner
+
+Display-only. Routing happens via NotificationService.onNotificationTapped — never inside the banner.
+
+---
+
+## Rules
+- Never use print() or logging package — use debugLog() from core/helpers.dart
+- Always use Success() / Failure() — never Result.success() / Result.failure()
+- Always use Helper.get*() for JSON parsing — never raw casts
+- notification_router.dart lives in core/notifications/ — routes injected via configure(), never hardcoded inside
+- Never call NotificationRouter.route() from views — wire it via onNotificationTapped
+- NotificationService is a singleton — always NotificationService.instance
+- ForegroundNotificationBanner is display-only — no routing logic inside it

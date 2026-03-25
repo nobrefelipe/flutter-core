@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/atomic_state/async_atom.dart';
 import '../data/auth_repository.dart';
+import 'app_config/app_config_controller.dart';
 import 'atomic_state/auth_state.dart';
 import 'global_atoms.dart';
 import 'env.dart';
@@ -57,13 +58,11 @@ class _AuthBuilderState extends State<AuthBuilder> {
 
     if (current is Authenticated) {
       await NotificationService.instance.initialize(appId: Env.oneSignalAppId, context: context);
+      await appConfigController.load();
 
-      // Wire notification routing — paths registered here, core/ stays clean
+      // Wire notification routing
       NotificationRouter.configure({
         NotificationType.paymentReceived: '/home',
-        NotificationType.moneyRequest: '/home',
-        NotificationType.newLearningVideo: '/learning',
-        NotificationType.customCommunication: '/home',
       });
 
       NotificationService.instance.onNotificationTapped = (n) => NotificationRouter.route(context, n);
@@ -71,6 +70,7 @@ class _AuthBuilderState extends State<AuthBuilder> {
       NotificationService.instance.setupUserAfterAuth();
     } else if (current is Unauthenticated) {
       NotificationService.instance.clearUserData();
+      appConfigController.onLogout();
       resetAllAtoms();
     }
   }

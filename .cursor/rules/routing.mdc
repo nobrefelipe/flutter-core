@@ -1,0 +1,129 @@
+---
+description: Routing patterns using GoRouter
+globs: ["lib/router.dart", "lib/views/**/*.dart"]
+alwaysApply: false
+---
+
+# Routing
+
+Routing uses `go_router`. All routing decisions live in `lib/router.dart` — never navigate based on auth logic in views or controllers.
+
+## Setup
+
+```dart
+// main.dart
+MaterialApp.router(
+  routerConfig: router,
+  builder: (context, child) => AuthBuilder(child: child!),
+)
+```
+
+## Navigation
+
+```dart
+// Push — adds to stack, back button works
+context.push('/rewards');
+
+// Push with path param
+context.push('/rewards/$id');
+
+// Go — replaces entire stack, no back button
+// Use for auth redirects and tab switches
+context.go('/home');
+
+// Pop
+context.pop();
+
+// Pass complex objects
+context.push('/rewards/detail', extra: rewardModel);
+// received via: final reward = state.extra as RewardModel;
+```
+
+## Defining routes
+
+Add routes to `_routes` in `router.dart`:
+
+```dart
+GoRoute(
+  path: '/rewards',
+  builder: (context, state) => const RewardsView(),
+  routes: [
+    // nested — /rewards/:id
+    GoRoute(
+      path: ':id',
+      builder: (context, state) {
+        final id = state.pathParameters['id']!;
+        return RewardDetailView(id: id);
+      },
+    ),
+  ],
+),
+```
+
+### Current routes
+
+As of now, `router.dart` defines:
+
+- `/auth/app-lock` → `AppLockPage`
+- `/auth/pin-setup` → `PinSetupPage`
+- `/auth/bio-setup` → `BiometricSetupPage`
+- `/home` → `HomePage`.
+
+Add new feature routes to `_routes` using the same `GoRoute` pattern as above.
+
+## Post-auth gate chain
+
+After login, the router walks a chain of conditions before reaching `/home`.
+Each unmet condition redirects to its resolution screen.
+
+```
+Authenticated
+  → isPinSetupComplete?     No → /auth/pin-setup
+  → hasAcceptedTerms?       No → /auth/terms        (example)
+  → isProfileComplete?      No → /auth/complete-profile (example)
+  → /home
+```
+
+### Adding a new gate
+
+1. Add a static method to `PostAuthGates` in `router.dart`:
+```dart
+static bool hasAcceptedTerms(BuildContext context) {
+  return AppCache().hasAcceptedTerms();
+}
+```
+
+2. Add the condition to `_redirect()` in priority order:
+```dart
+if (auth is Authenticated && isOnAuth) {
+  if (!PostAuthGates.isPinSetupComplete(context)) return '/auth/pin-setup';
+  if (!PostAuthGates.hasAcceptedTerms(context)) return '/auth/terms';
+  return '/home';
+}
+```
+
+3. Add the resolution route to `_routes`.
+
+4. In the resolution screen, call `router.refresh()` when the condition is satisfied — never navigate directly:
+```dart
+// In TermsView — after user accepts
+await AppCache().setTermsAccepted();
+router.refresh(); // re-runs redirect chain — moves to next gate or /home
+```
+
+## AuthBuilder responsibilities
+
+`AuthBuilder` handles side effects only — never routing:
+- Triggers `AuthRepository().checkAuth()` on `Initial` state
+- Sets up / tears down notifications on auth change
+- Calls `resetAllAtoms()` on `Unauthenticated`
+
+`GoRouter` handles all routing via `refreshListenable: authState` — re-evaluates `_redirect` automatically on every `authState` change.
+
+## Rules
+- Never call `context.go()` or `context.push()` based on auth state in views or controllers — that belongs in `_redirect()`
+- Never navigate directly from a resolution screen — always call `router.refresh()`
+- Always use `context.go()` for auth redirects — never `context.push()`
+- Always use `context.push()` for feature navigation — preserves back stack
+- Add new routes to `_routes` in `router.dart` — never define routes elsewhere
+- Pass simple values via path params, complex objects via `extra`

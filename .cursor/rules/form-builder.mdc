@@ -1,0 +1,205 @@
+---
+description: Form builder system — API-driven forms using FNFormField and FnFormBuilder
+globs: ["lib/views/**/*.dart", "lib/features/**/*.dart", "lib/controllers/**/*.dart"]
+alwaysApply: false
+---
+
+# Form Builder
+
+API-driven form system in `lib/core/form_builder/`. Field definitions come from the backend — the UI renders itself from the data. Never hardcode form fields in views.
+
+## File structure
+```
+lib/
+  core/
+    form_builder/
+      fn_form_field.dart        # FNFormField model + FieldSelectValues
+      form_validators.dart      # FormValidators mixin
+      form_exceptions.dart      # ValidateException
+      form_field_adapter.dart   # Parses API response into List<FNFormField>
+      fn_form_builder.dart      # Core widget — renders fields from list
+      form_fields.dart          # FormFieldsBuilderPage — form + submit button
+      form_page_template.dart   # Scaffold wrapper around FormFieldsBuilderPage
+      form_field_widget.dart    # FormFieldInput — text/email/number/password
+      select_value_widget.dart  # SelectValue — popup list picker
+      radio_input_field.dart    # RadioInputField — radio group
+      remove_focus_on_tap.dart  # Dismiss keyboard on tap outside
+```
+
+---
+
+## FNFormField
+
+The model representing a single form field. Comes from the API via `FormFieldAdapter`.
+
+```dart
+FNFormField(
+  attribute: 'email',           // key in the DTO sent to the API
+  label: 'Email address',       // displayed label
+  type: 'email',                // determines which widget is rendered
+  hint: 'Enter your email',     // placeholder text
+  required: true,               // toggles validation
+  suffix: '',                   // optional suffix text (e.g. 'kg', '%')
+  value: 'prefilled@value.com', // pre-filled value (optional)
+  conditionedBy: 'role',        // show only when another field equals conditionValue
+  conditionValue: 'admin',      // the value that makes this field visible
+  textInputAction: "next",           // always a string — parsed to TextInputAction by adapter
+  values: [                     // options for select/radio types
+    FieldSelectValues(label: 'Option A', value: 'a', image: ''),
+  ],
+)
+```
+
+### Supported field types
+Field types are defined by the `FieldType` enum in `fn_form_field.dart`. Always use the string name in maps — the adapter parses it to the enum.
+
+| string | FieldType | Widget rendered |
+|---|---|---|
+| `"text"` | `FieldType.text` | `FormFieldInput` (text keyboard) |
+| `"email"` | `FieldType.email` | `FormFieldInput` (email keyboard) |
+| `"number"` | `FieldType.number` | `FormFieldInput` (numeric keyboard) |
+| `"password"` | `FieldType.password` | `FormFieldInput` (obscured) |
+| `"select"` | `FieldType.select` | `SelectValue` (popup list) |
+| `"radio"` | `FieldType.radio` | `RadioInputField` (radio group) |
+| `"address_lookup"` | `FieldType.addressLookup` | placeholder |
+| `"picture"` | `FieldType.picture` | placeholder |
+
+Unknown type strings fall back to `FieldType.text` — the field renders as a plain text input so it's always visible. If a field looks wrong, check the `type` string matches a `FieldType` name.
+
+To add a new field type: add it to the `FieldType` enum, handle it in `FnFormBuilder._buildField()` switch, and add a validator to `FormValidators`.
+
+---
+
+## Defining fields locally
+
+Fields are defined as plain Dart maps and parsed via `FormFieldAdapter`. This is the standard pattern — fields do not need to come from the API.
+
+```dart
+final loginFields = FormFieldAdapter().fromJsonToList([
+  {
+    "attribute": "email",
+    "label": "Email",
+    "hint": "What is your email address?",
+    "type": "email",
+    "required": true,
+    "textInputAction": "next",
+  },
+  {
+    "attribute": "password",
+    "label": "Password",
+    "hint": "",
+    "type": "password",
+    "required": true,
+    "textInputAction": "go",
+  },
+]);
+```
+
+Define fields at the top of the controller file, next to the atom. They are static data — not inside a method.
+
+---
+
+## Parsing fields from API
+
+Use `FormFieldAdapter` to parse the API response into a list of fields:
+
+```dart
+final fields = FormFieldAdapter().fromJsonToList(response.data['fields']);
+```
+
+---
+
+## Rendering a form
+
+### FormFieldsBuilderPage — form + submit button
+Use this when embedding a form inside an existing screen:
+
+```dart
+FormFieldsBuilderPage(
+  formFields: fields,
+  ctaLabel: 'Save changes',
+  onSubmit: (Map<String, dynamic> dto) async {
+    final result = await controller.updateProfile(dto);
+    if (result is Success) Navigator.pop(context);
+  },
+)
+```
+
+With pre-filled values from an existing entity:
+```dart
+FormFieldsBuilderPage(
+  entity: userEntity,   // implements Entity — provides getAttribute()
+  formFields: fields,
+  onSubmit: (dto) async => controller.updateProfile(dto),
+)
+```
+
+### FormPageTemplate — full Scaffold with AppBar
+Use this when the form is a standalone page:
+
+```dart
+FormPageTemplate(
+  formFields: fields,
+  ctaLabel: 'Register',
+  onSubmit: (dto) async => controller.register(dto),
+)
+
+// Edit mode — AppBar title changes to "Editing"
+FormPageTemplate(
+  entity: existingEntity,
+  formFields: fields,
+  onSubmit: (dto) async => controller.update(dto),
+)
+```
+
+---
+
+## Conditional fields
+
+A field can be shown/hidden based on the value of another field:
+
+```dart
+FNFormField(
+  attribute: 'company_name',
+  type: 'text',
+  label: 'Company name',
+  conditionedBy: 'account_type',   // watches this attribute
+  conditionValue: 'business',      // visible only when account_type == 'business'
+  ...
+)
+```
+
+The controlling field must appear before the conditioned field in the list. The conditioned field animates in/out with `AnimatedOpacity`.
+
+---
+
+## The DTO
+
+`FormFieldsBuilderPage` builds a `Map<String, dynamic>` DTO automatically from the field list. Keys are `field.attribute` values. The DTO is passed to `onSubmit` when the form is valid.
+
+You do not need to build the DTO manually — just handle `onSubmit`:
+
+```dart
+onSubmit: (Map<String, dynamic> dto) async {
+  // dto = { 'email': 'user@example.com', 'name': 'John', ... }
+  await controller.submit(dto);
+}
+```
+
+---
+
+## Validation
+
+Validation is automatic — each field type has a validator in `FormValidators`. Validation runs on user interaction (`AutovalidateMode.onUserInteraction`). On submit, all fields are validated and a snackbar is shown if any fail.
+
+To skip validation for a field, set `required: false`.
+
+---
+
+## Rules
+- Never use raw `TextFormField`, `DropdownButton`, or `RadioListTile` directly in feature views — always go through the form builder
+- Never hardcode form fields in views — define them as `List<FNFormField>` in the controller or parse from API
+- Never build the DTO manually — `FormFieldsBuilderPage` handles it
+- `FormPageTemplate` is a thin Scaffold wrapper — all logic lives in `FormFieldsBuilderPage`
+- Always pass `textInputAction` as a string (`"next"`, `"go"`, `"done"`) — never as `TextInputAction.next` directly
+- To add a new field type: add the type string to `FnFormBuilder._builder()` map and add a validator to `FormValidators`

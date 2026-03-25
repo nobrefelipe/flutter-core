@@ -1,0 +1,55 @@
+---
+description: Template for writing feature specs before implementation
+globs: tasks/**/*.md
+alwaysApply: false
+---
+
+# Feature Spec Template
+
+Before implementing any feature, write a spec in `tasks/[feature-name]-spec.md`.
+This ensures edge cases are considered before touching any code.
+
+## Spec structure
+```markdown
+# [Feature Name] Spec
+
+## Overview
+One paragraph describing what this feature does and why.
+
+## User flows
+Step by step — what the user does and what the app does in response.
+
+## Screens
+List every screen/view involved. For each:
+- What data is displayed
+- What actions are available
+- Loading / empty / error states
+
+## API endpoints
+List every endpoint needed:
+- METHOD /api/path — description
+- Request body (if POST/PATCH)
+- Response shape
+
+## Data models
+List every model needed with its fields and types.
+
+## Edge cases
+- What happens if the API fails?
+- What if the list is empty?
+- What if the user is unauthenticated mid-session?
+- Any race conditions?
+
+## Tasks
+Ordered implementation checklist:
+- [ ] Create model: `models/feature_model.dart`
+- [ ] Create service: `data/feature_service.dart`
+- [ ] Create controller + atom: `controllers/feature_controller.dart`
+- [ ] Create view: `views/feature/feature_view.dart`
+- [ ] Create sub-widgets: `widgets/feature/`
+```
+
+## Rules
+- Always write the spec before writing any code
+- Get spec approved before moving to implementation
+- Tasks must be in dependency order — model before service, service before controller, controller before view

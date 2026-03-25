@@ -1,0 +1,88 @@
+---
+description: Controller patterns for this Flutter app
+globs: lib/controllers/**/*.dart
+alwaysApply: false
+---
+
+# Controllers
+
+Plain Dart classes in `lib/controllers/`. The atom lives at the top of the same file.
+
+## Standard pattern
+```dart
+// controllers/rewards_controller.dart
+
+final rewards = AsyncAtom<List<RewardModel>>();
+
+class RewardsController {
+  final service = RewardsService();
+
+  Future<void> loadRewards() async {
+    rewards.emit(Loading());
+    final result = await service.getRewards();
+    rewards.emit(result);
+  }
+}
+```
+
+## With caching
+Show cached data immediately, fetch in background to refresh silently:
+```dart
+Future<void> loadRewards() async {
+  final current = rewards.value;
+  if (current is Success<List<RewardModel>> && current.value.isNotEmpty) {
+    service.getRewards().then((result) => rewards.emit(result));
+    return;
+  }
+  rewards.emit(Loading());
+  final result = await service.getRewards();
+  rewards.emit(result);
+}
+```
+
+## With optional loading indicator
+```dart
+Future<void> refresh({bool showLoading = true}) async {
+  if (showLoading) rewards.emit(Loading());
+  final result = await service.getRewards();
+  rewards.emit(result);
+}
+```
+
+## Refreshing related atoms after a mutation
+```dart
+Future<Result<String>> createPreOrder({required String id}) async {
+  final result = await service.createPreOrder(id: id);
+  if (result is Success<String>) {
+    refresh(showLoading: false);
+    myRewardsController.refresh(showLoading: false);
+  }
+  return result;
+}
+```
+
+## Finding cached data without an API call
+```dart
+RewardModel? findById(String id) {
+  final current = rewards.value;
+  if (current is Success<List<RewardModel>>) {
+    try {
+      return current.value.firstWhere((r) => r.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+  return null;
+}
+```
+
+## Rules
+- Plain Dart class — no base class to extend
+- Atom defined at the top of the same file — no separate atoms folder
+- Instantiate the service directly: `final service = FeatureService()`
+- Always emit `Loading()` before async calls (unless `showLoading: false`)
+- **Never use try/catch** — services never throw, failures return as `Failure()`
+- After mutations, refresh affected atoms silently with `showLoading: false`
+- Return `Result<T>` when the view needs to react directly (e.g. show a snackbar)
+- Return `void` when the view reacts via the atom
+- `AsyncAtom` self-registers automatically — no need to touch `AuthBuilder` when adding a new atom

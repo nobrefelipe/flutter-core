@@ -121,7 +121,7 @@ class NotificationService {
       if (user.id.isEmpty) return Failure('Student ID is empty');
 
       await OneSignal.login(user.id);
-      OneSignal.User.addTags({'user_type': 'student', 'student_id': user.id, 'school_id': student.schoolName});
+      OneSignal.User.addTags({'user_type': 'student', 'student_id': user.id, 'school_id': user.schoolName});
       await AuthRepository().updateOneSignalPlayerId();
 
       debugLog('OneSignal user setup complete: ${user.id}', 'NotificationService');

@@ -1,0 +1,280 @@
+---
+description: UI Kit usage rules and patterns for components in lib/core/ui/
+globs: ["lib/views/**/*.dart", "lib/widgets/**/*.dart", "lib/core/ui/**/*.dart"]
+alwaysApply: false
+---
+
+# UI Kit
+
+All shared UI components live in `lib/core/ui/`. Never use raw Flutter primitives (e.g. `Text`, `ElevatedButton`, `showModalBottomSheet`) directly in feature code — always go through the UI kit.
+
+## Project Structure
+
+```
+lib/
+  core/
+    ui/
+      _theme.dart                ← DesignTokens + ThemeData extension + AppThemes light/dark
+      text.dart                  ← UIKText semantic text widget
+      loading_state_mixin.dart   ← LoadingStateMixin for async widgets
+      buttons/
+        base_button.dart         ← AppButton stateful widget (enum-driven)
+        ui_kit_button.dart       ← UIKButton fluent facade
+      bottom_sheet/
+        ui_kit_bottom_sheet.dart ← UIKBottomSheet static facade (if present)
+        bottom_sheet_shell.dart  ← shell: header + auto-scroll body + footer
+        bottom_sheet_action.dart ← BottomSheetAction model
+        bottom_sheet_close_button.dart
+        gradient_fade.dart       ← theme-aware gradient overlay
+      hero_dialog/
+        hero_dialog_route.dart
+        custom_rect_tween.dart
+        popup_card_tile.dart
+        popup_card_content.dart
+```
+
+---
+
+## Tokens & Theme
+
+All raw values are in `DesignTokens`. Never hardcode colors, font sizes, radii, or shadows — reference the token instead.
+
+```dart
+// ✅
+color: DesignTokens.primary
+borderRadius: BorderRadius.circular(DesignTokens.buttonBorderRadius)
+
+// ❌
+color: Color(0xFF6FCF97)
+borderRadius: BorderRadius.circular(14)
+```
+
+Access themed styles via the `ThemeData` extension inside widgets:
+
+```dart
+final theme = Theme.of(context);
+theme.h3Style        // heading
+theme.bodyStyle      // body
+theme.buttonLargeStyle
+```
+
+---
+
+## Buttons
+
+### Enums
+
+```dart
+enum ButtonType { primary, secondary, destructive, ghost }
+enum ButtonSize  { small, medium, large }
+```
+
+### UIKButton — preferred in feature code
+
+```dart
+// Fluent with explicit size
+UIKButton.primary.large(label: 'Save', onTap: () async => save())
+UIKButton.secondary.small(label: 'Edit', onTap: () async => edit())
+UIKButton.destructive.medium(label: 'Delete', onTap: () async => delete())
+UIKButton.ghost(label: 'Cancel', onTap: () async => cancel())
+
+// Default (medium) — call directly
+UIKButton.primary(label: 'Continue', onTap: () async => next())
+```
+
+### AppButton — use directly in tests or when you need a key
+
+```dart
+AppButton(
+  label: 'Save',
+  onTap: () async => save(),
+  type: ButtonType.primary,
+  size: ButtonSize.large,
+)
+```
+
+### Rules
+
+- `onTap` is nullable — passing `null` automatically disables the button. Never use the `disabled` flag just to block taps.
+- `fullWidth` defaults to `true`. Pass `fullWidth: false` for inline or icon-adjacent buttons.
+- Pass `isLoading: true` from a parent for externally controlled loading (e.g. form submission). Internal loading is handled automatically via `LoadingStateMixin` for fire-and-forget async taps.
+- Never wrap a button in `GestureDetector` or `InkWell` — tap handling is built in.
+- `UIKitButton` is a zero-logic facade — it delegates everything to `AppButton`. Don't add logic to `UIKitButton`.
+
+---
+
+## Typography
+
+### UIKText — always use instead of raw `Text`
+
+```dart
+UIKText.pageTitle('Dashboard')
+UIKText.pageSubtitle('Overview')
+UIKText.h1('Section Header')
+UIKText.h2('...')
+UIKText.h3('...')
+UIKText.h4('...')
+UIKText.h5('...')
+UIKText.h6('...')
+UIKText.body('Regular paragraph text')
+UIKText.small('Caption or metadata')
+```
+
+### Optional parameters (all constructors)
+
+```dart
+UIKText.body(
+  'Truncated description',
+  color: Colors.grey,       // overrides theme color only
+  textAlign: TextAlign.center,
+  maxLines: 2,              // adds TextOverflow.ellipsis automatically
+  overflow: TextOverflow.fade,
+)
+```
+
+### Rules
+
+- Never use `Text(...)` directly in feature UI — always use `UIKText`.
+- Never hardcode a `TextStyle` inline. If a style isn't covered by `UIKText`, add it to `DesignTokens` and `ThemeData` extension first.
+- Color overrides should only be used for one-off semantic exceptions (e.g. error red, muted grey). If the same override appears in 2+ places, add a named style.
+
+---
+
+## Bottom Sheets
+
+### UIKitBottomSheet.show — standard sheet
+
+```dart
+// Content only, no footer
+UIKitBottomSheet.show(
+  context,
+  title: 'Filters',
+  content: FiltersWidget(),
+);
+
+// Single primary action
+UIKitBottomSheet.show(
+  context,
+  title: 'Confirm',
+  content: ConfirmWidget(),
+  primaryAction: BottomSheetAction(
+    label: 'Confirm',
+    onTap: () async => confirm(),
+  ),
+);
+
+// Primary + secondary (cancel)
+UIKitBottomSheet.show(
+  context,
+  title: 'Delete item',
+  content: DeleteWarning(),
+  primaryAction: BottomSheetAction(label: 'Delete', onTap: () async => delete()),
+  secondaryAction: BottomSheetAction(label: 'Cancel', onTap: () async => cancel()),
+);
+
+// Custom footer
+UIKitBottomSheet.show(
+  context,
+  title: 'Pick a plan',
+  content: PlanPicker(),
+  footer: PlanFooterWidget(),
+);
+```
+
+### UIKitBottomSheet.showPaged — multi-step flows
+
+```dart
+UIKitBottomSheet.showPaged(
+  context,
+  pages: [
+    BottomSheetPage(
+      title: 'Step 1',
+      content: Step1Widget(),
+      primaryAction: BottomSheetAction(
+        label: 'Next',
+        onTap: () async => BottomSheetPage.pushNext(context, step2),
+      ),
+    ),
+    BottomSheetPage(
+      title: 'Step 2',
+      content: Step2Widget(),
+      primaryAction: BottomSheetAction(label: 'Finish', onTap: () async => finish()),
+    ),
+  ],
+);
+```
+
+Navigating pages from inside content:
+
+```dart
+// Push next page
+BottomSheetPage.pushNext(context, nextPage);
+
+// Go back
+BottomSheetPage.popPage(context);
+```
+
+### Rules
+
+- Never pass both `footer` and `primaryAction` — this will throw an assertion error.
+- `secondaryAction` is only valid alongside `primaryAction`. It renders as a ghost button below the primary.
+- `footer` is for fully custom layouts only. Prefer `primaryAction` / `secondaryAction` for standard CTAs so styling stays consistent.
+- Never call `Navigator.pop()` inside a bottom sheet — always use `FamilyModalSheet.of(context).popPage()` or `BottomSheetPage.popPage(context)`.
+- Never use raw `showModalBottomSheet` or `showBottomSheet` in feature code. Exception: `UIKitBottomSheet.showExpandable()` for drag-to-expand content sheets (Maps/Spotify-style).
+
+### Scroll behaviour
+
+- Content scrolls automatically when it overflows 60% of screen height — no manual configuration needed.
+- `GradientFade` is applied automatically at the bottom edge when content is scrollable.
+- For long lists inside a sheet, wrap in a `SizedBox` with an explicit height rather than relying on the overflow detector — it will be more performant.
+
+### GradientFade — standalone use
+
+```dart
+GradientFade(
+  fadeTop: false,
+  fadeBottom: true,
+  fadeHeight: 40,
+  // color defaults to Theme.of(context).colorScheme.surface
+  child: myScrollableList,
+)
+```
+
+---
+
+## LoadingStateMixin
+
+Used internally by `AppButton`. Available for any `StatefulWidget` that needs async loading state.
+
+```dart
+class _MyWidgetState extends State<MyWidget> with LoadingStateMixin {
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: isLoading,
+      builder: (context, loading, _) {
+        return AppButton(
+          label: 'Go',
+          onTap: () => withLoading(myAsyncFn),
+          isLoading: loading,
+          type: ButtonType.primary,
+        );
+      },
+    );
+  }
+}
+```
+
+`withLoading` automatically sets loading state, runs the callback, fires `HapticFeedback.heavyImpact()` on success, and resets loading in `finally`.
+
+---
+
+## Adding New Components
+
+When adding a new component to the UI kit:
+
+1. Create the raw widget in `lib/core/ui/<component>/app_<component>.dart`
+2. If it has variants, use enums — never string flags
+3. Create a fluent facade `ui_kit_<component>.dart` if it has multiple call patterns
+4. Always pull colors from `Theme.of(context)` — never hardcode
+5. Update this file

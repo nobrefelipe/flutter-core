@@ -1,0 +1,21 @@
+---
+description: Lessons learned and past corrections — read before every session
+alwaysApply: true
+---
+
+# Lessons
+
+Past corrections and patterns to remember. Updated after every mistake.
+
+## How to add a lesson
+After any correction during a session, log it here:
+```
+## [short description]
+**Wrong:** what was generated incorrectly
+**Right:** what the correct pattern is
+**Why:** why the correct pattern matters
+```
+
+---
+
+<!-- Lessons are added here as the project evolves -->

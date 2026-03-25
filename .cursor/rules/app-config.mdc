@@ -1,0 +1,267 @@
+---
+description: Backend-driven navigation and feature flags using AppConfig
+globs: ["lib/core/app_config/**/*.dart", "lib/router.dart"]
+alwaysApply: false
+---
+
+# App Config
+
+Backend-driven navigation and feature flag system. The entire navigation structure is fetched from `/v4/profile-config` on login and drives the app's UI.
+
+## Core components
+
+```
+lib/core/app_config/
+  domain/
+    app_config.dart         # AppConfig — immutable config (settings + navigation)
+    global_settings.dart    # GlobalSettings — feature flags
+    nav_item.dart           # NavItem — a single navigation destination
+    nav_type.dart           # NavType enum — route | webpage | custom
+  navigation/
+    app_navigator.dart      # AppNavigator — executes navigation based on NavType
+  adapters/
+    app_config_adapter.dart # Parses API response into AppConfig
+  app_config_controller.dart # Controller + appConfig atom
+  app_config_service.dart    # Service — fetches config from API
+```
+
+## AppConfig
+
+Immutable configuration fetched once on login. Never mutated after construction.
+
+```dart
+class AppConfig {
+  final GlobalSettings settings;      // Feature flags
+  final List<NavItem> navigation;     // Top-level nav items (tabs, menu)
+  
+  NavItem get firstPage => navigation.first;
+  NavItem? findByRoute(String route) { ... }
+}
+```
+
+## GlobalSettings
+
+Feature flags returned by the backend. Controls which infrastructure services are active.
+
+```dart
+class GlobalSettings {
+  final bool enablePushNotifications;
+  final bool enableIntercom;
+  final bool enableLocationTracking;
+  final bool enableNotificationsCentre;
+}
+```
+
+## NavItem
+
+A single navigation destination. Can represent a bottom nav tab, menu link, or nested sub-link.
+
+```dart
+class NavItem {
+  final String route;                 // Route path or URL
+  final String label;                 // Display label
+  final String? icon;                 // Icon key (resolved by AppIcons.resolve)
+  final String? description;          // Optional description
+  final NavType type;                 // How this item navigates
+  final Map<String, dynamic> config;  // Raw config passed to destination
+  final List<NavItem> links;          // Nested links (for menus)
+  
+  Future<void> navigate(BuildContext context, {bool forRoot = true});
+}
+```
+
+## NavType
+
+```dart
+enum NavType {
+  route,    // Standard GoRouter push — route string is the path
+  webpage,  // Opens URL in AppWebView
+  custom,   // Handled by injected handler (e.g. Intercom, camera)
+}
+```
+
+## AppNavigator
+
+Central navigation executor. Never call GoRouter directly from a NavItem — always use `item.navigate(context)` or `AppNavigator.navigate(context, item)`.
+
+### Custom handlers
+
+Custom handlers are injected from outside `core/` to keep the module decoupled from app-specific logic.
+
+```dart
+// In AuthBuilder after Authenticated:
+AppNavigator.registerCustomHandler(
+  'intercom',
+  (context, item) async => IntercomHandler().openMessenger(),
+);
+
+AppNavigator.registerCustomHandler(
+  'kiosk',
+  (context, item) async => context.push('/kiosk', extra: item.config),
+);
+```
+
+On logout, call `appConfigController.onLogout()` to clear handlers.
+
+## appConfig atom
+
+Global `AsyncAtom<AppConfig>` — self-registers for `resetAllAtoms()` on logout.
+
+```dart
+final appConfig = AsyncAtom<AppConfig>();
+
+// States:
+Idle()     // before login
+Loading()  // fetch in progress
+Success()  // config ready, navigation active
+Failure()  // fetch failed — show error + retry
+```
+
+## Wiring
+
+### 1. AuthBuilder
+
+```dart
+case Authenticated():
+  await appConfigController.load();
+  
+  // Register custom handlers
+  AppNavigator.registerCustomHandler('intercom', ...);
+  AppNavigator.registerCustomHandler('kiosk', ...);
+
+case Unauthenticated():
+  appConfigController.onLogout(); // clears nav handlers
+  resetAllAtoms();                // resets appConfig atom
+```
+
+### 2. Router redirect
+
+```dart
+redirect: (context, state) {
+  final auth   = authState.value;
+  final config = appConfig.value;
+  
+  if (auth is Unauthenticated) return '/login';
+  if (auth is Authenticated) {
+    if (config is Loading || config is Idle) return '/loader';
+    if (config is Failure)                   return '/config-error';
+    if (config is Success) return null; // navigation ready
+  }
+  return null;
+}
+```
+
+### 3. Bottom nav / AppShell
+
+Render navigation from `config.navigation`:
+
+```dart
+appConfig(
+  loading: () => const AppLoaderScreen(),
+  failure: (msg) => ConfigErrorScreen(onRetry: appConfigController.reload),
+  success: (config) => AppShell(navItems: config.navigation),
+)
+```
+
+### 4. Bottom navigation bar
+
+```dart
+BottomNavigationBar(
+  items: navItems.map((item) => BottomNavigationBarItem(
+    icon: Icon(AppIcons.resolve(item.icon)),
+    label: item.label,
+  )).toList(),
+  onTap: (index) => navItems[index].navigate(context, forRoot: false),
+)
+```
+
+### 5. Menu screen
+
+Render links from a NavItem:
+
+```dart
+final menuItem = appConfigController.current?.findByRoute('app-menu');
+
+ListView(
+  children: menuItem?.links.map((link) => ListTile(
+    title: Text(link.label),
+    subtitle: link.description != null ? Text(link.description!) : null,
+    leading: Icon(AppIcons.resolve(link.icon)),
+    onTap: () => link.navigate(context),
+  )).toList() ?? [],
+)
+```
+
+## AppIcons
+
+Icon resolver in `lib/core/ui/icons/app_icons.dart`. Maps string icon keys to Lucide IconData.
+
+```dart
+AppIcons.resolve('home')      // LucideIcons.home
+AppIcons.resolve('rewards')   // LucideIcons.gift
+AppIcons.resolve('profile')   // LucideIcons.user
+AppIcons.resolve(null)        // LucideIcons.circle (fallback)
+```
+
+To add a new icon, add it to the switch statement in `AppIcons.resolve()`.
+
+## WebView route
+
+The `/webview` route must be defined in `router.dart`:
+
+```dart
+GoRoute(
+  path: '/webview',
+  builder: (context, state) {
+    final args = state.extra as NavArgs;
+    final url = args.config['url'] as String;
+    final title = args.config['title'] as String?;
+    return AppWebView(url: url, title: title);
+  },
+)
+```
+
+`AppWebView` is a reusable widget in `lib/core/ui/webview/app_webview.dart`.
+
+## Rules
+
+- **Never hardcode bottom nav items** — always render from `config.navigation`
+- **Never call GoRouter directly from a NavItem** — use `item.navigate(context)`
+- **Custom handlers must be registered in AuthBuilder** after `Authenticated`
+- **Config is immutable** — never mutate after construction
+- **Always use `appConfigController.current`** for null-safe access to the current config
+- **WebView route must exist** at `/webview` in `router.dart`
+- **Icon keys are resolved by `AppIcons.resolve()`** — never hardcode IconData in navigation
+- **On logout, call `appConfigController.onLogout()`** before `resetAllAtoms()`
+- **NavArgs is passed via GoRouter's `extra`** — destination screens read it from `state.extra`
+- **`forRoot` parameter controls navigation shell** — pass `false` when navigating between tabs
+
+## Adding a new custom handler
+
+1. Register the handler in `AuthBuilder` after `Authenticated`:
+   ```dart
+   AppNavigator.registerCustomHandler('my-custom-route', (context, item) async {
+     // Handle navigation
+   });
+   ```
+
+2. Backend sends a NavItem with `type: "custom"` and `route: "my-custom-route"`
+
+3. When tapped, `AppNavigator` calls your registered handler
+
+## Error handling
+
+If config fetch fails:
+- Router redirects to `/config-error`
+- Show error message + retry button
+- Retry calls `appConfigController.reload()`
+
+## Null-safe access
+
+```dart
+final config = appConfigController.current; // AppConfig? or null
+if (config != null) {
+  final firstPage = config.firstPage;
+  final menuItem = config.findByRoute('app-menu');
+}
+```

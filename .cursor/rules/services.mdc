@@ -1,0 +1,66 @@
+---
+description: Service layer patterns for API calls
+globs: lib/data/**/*.dart
+alwaysApply: false
+---
+
+# Services
+
+Services extend `APIRequest` and return `Result<T>`. No logic — just HTTP. One file per feature in `lib/data/`.
+
+`APIRequest` lives in `lib/core/http/http_client.dart` and uses `httpResponse.dart` + `response_extensions.dart` to convert `http.Response` into `Result<T>` via `ResponseExtention.toResult<T>()` and `ResponseInterceptor<T>`.
+
+## Current usage
+
+- `AuthRepository` in `lib/data/auth_repository.dart` currently extends `APIRequest`.
+- `checkAuth()` uses `authGet` and switches on the `Result` to emit `Authenticated` / `Unauthenticated` into `authState`.
+- `login()` uses the raw `post()` + `response.toResult<AuthState>()` pattern because it runs before an auth token exists.
+- New feature services under `lib/data/` should follow the standard pattern below and use the `auth*` helpers.
+
+## Standard pattern
+```dart
+class RewardsService extends APIRequest {
+  /// GET /api/rewards
+  Future<Result<List<RewardModel>>> getRewards() =>
+      authGet('/api/rewards', RewardModel.fromJsonToList);
+
+  /// GET /api/rewards/{id}
+  Future<Result<RewardModel>> getRewardDetails({required String id}) =>
+      authGet('/api/rewards/$id', RewardModel.fromJson);
+
+  /// POST /api/rewards/{id}/pre-order
+  Future<Result<String>> createPreOrder({required String id}) =>
+      authPost('/api/rewards/$id/pre-order', (data) => Helper.getString(data['success_message']));
+
+  /// PATCH /api/rewards/{id}
+  Future<Result<RewardModel>> updateReward({required String id, required Map<String, dynamic> body}) =>
+      authPatch('/api/rewards/$id', RewardModel.fromJson, body: body);
+
+  /// DELETE /api/rewards/{id}
+  Future<Result<String>> deleteReward({required String id}) =>
+      authDelete('/api/rewards/$id', (data) => Helper.getString(data['success_message']));
+}
+```
+
+## Available shorthand methods
+- `authGet(path, adapter)` — GET
+- `authPost(path, adapter, {body})` — POST
+- `authPatch(path, adapter, {body})` — PATCH
+- `authPut(path, adapter, {body})` — PUT
+- `authDelete(path, adapter, {body})` — DELETE (handles nullable response internally)
+
+## Rules
+- Always use `auth*` shorthand methods
+- Always use arrow syntax `=>` — no `async/await`, no `return`, no braces
+- Document each method with HTTP method and path: `/// GET /api/rewards`
+- Use `Model.fromJson` for single objects, `Model.fromJsonToList` for lists
+- No business logic — that belongs in the controller
+
+## ResponseInterceptor behavior
+Handles all standard API error shapes automatically:
+- `{ message: ... }` → `Failure` (+ emits `Unauthenticated` if "unauthenticated")
+- `{ error: ... }` → `Failure` (same)
+- `{ data: ... }` or `{ result: ... }` → `Success` via adapter
+- Empty response / missing `data` key → `Failure`
+
+Never duplicate this logic in services or controllers.

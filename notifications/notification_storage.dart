@@ -29,10 +29,7 @@ class NotificationStorage {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = prefs.getString(_notificationsKey);
       if (jsonString == null) return Success([]);
-      final notifications = (jsonDecode(jsonString) as List)
-          .map((json) => _fromJson(json))
-          .whereType<AppNotification>()
-          .toList();
+      final notifications = (jsonDecode(jsonString) as List).map((json) => _fromJson(json)).whereType<AppNotification>().toList();
       return Success(notifications);
     } catch (e) {
       return Failure('Failed to retrieve notifications: $e');
@@ -43,9 +40,7 @@ class NotificationStorage {
     try {
       final result = await getStoredNotifications();
       if (result is! Success<List<AppNotification>>) return Failure(result.errorMessage);
-      final updated = result.value
-          .map((n) => n.id == notificationId ? n.copyWith(isRead: true) : n)
-          .toList();
+      final updated = result.value.map((n) => n.id == notificationId ? n.copyWith(isRead: true) : n).toList();
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_notificationsKey, jsonEncode(updated.map(_toJson).toList()));
       return Success(null);
@@ -96,14 +91,14 @@ class NotificationStorage {
   // ─── Private helpers ──────────────────────────────────────────────────────
 
   static Map<String, dynamic> _toJson(AppNotification n) => {
-        'id': n.id,
-        'type': n.type.value,
-        'title': n.title,
-        'body': n.body,
-        'data': _dataToJson(n.data),
-        'received_at': n.receivedAt.toIso8601String(),
-        'is_read': n.isRead,
-      };
+    'id': n.id,
+    'type': n.type.value,
+    'title': n.title,
+    'body': n.body,
+    'data': _dataToJson(n.data),
+    'received_at': n.receivedAt.toIso8601String(),
+    'is_read': n.isRead,
+  };
 
   static AppNotification? _fromJson(dynamic json) {
     try {
@@ -124,34 +119,13 @@ class NotificationStorage {
   }
 
   static Map<String, dynamic> _dataToJson(NotificationData data) => switch (data) {
-        PaymentReceivedData d => {
-            'transaction_id': d.transactionId,
-            'amount': d.amount.toString(),
-            'currency': d.currency,
-            'from_user': d.fromUser,
-            'timestamp': d.timestamp.toIso8601String(),
-          },
-        MoneyRequestData d => {
-            'request_id': d.requestId,
-            'reason': d.reason,
-            'from_user': d.fromUser,
-            'amount': d.amount.toString(),
-            'timestamp': d.timestamp.toIso8601String(),
-          },
-        NewLearningVideoData d => {
-            'video_id': d.videoId,
-            'title': d.title,
-            'category': d.category,
-            'thumbnail_url': d.thumbnailUrl,
-            'duration_seconds': d.durationSeconds.toString(),
-          },
-        CustomCommunicationData d => {
-            'message_id': d.messageId,
-            'title': d.title,
-            'body': d.body,
-            'action_url': d.actionUrl,
-            'custom_data': d.customData,
-          },
-        _ => {},
-      };
+    PaymentReceivedData d => {
+      'transaction_id': d.transactionId,
+      'amount': d.amount.toString(),
+      'currency': d.currency,
+      'from_user': d.fromUser,
+      'timestamp': d.timestamp.toIso8601String(),
+    },
+    _ => {},
+  };
 }

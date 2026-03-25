@@ -1,0 +1,158 @@
+---
+description: Core architecture, primitives, and project structure for this Flutter app
+alwaysApply: true
+---
+
+# Project: [Your App Name]
+
+## Stack
+- Framework: Flutter / Dart
+- Backend: Custom REST API
+- No testing required at this stage
+
+## Project Structure
+```
+lib/
+  core/                      # Reusable infrastructure — zero app-specific knowledge
+    atomic_state/
+      atom.dart              # Atom<T> — ValueNotifier with emit() and call()
+      async_atom.dart        # AsyncAtom<T> — Atom<Result<T>> initialized as Idle()
+      result.dart            # Result<T> sealed class
+      auth_state.dart        # AuthState sealed hierarchy
+    helpers.dart             # Helper static utility class + debugLog, gradeCoinSymbol
+    global_atoms.dart        # authState + keyboardOpened — app-wide atoms
+    env.dart                 # Env configuration
+    extensions.dart          # App-wide extension helpers
+    entity_adapter.dart      # Entity adapter helpers
+    cache/                   # Local storage — AppCache + SharedPreferences singleton
+    http/                    # APIRequest + ResponseInterceptor + toResult<T>
+    localization/            # LocalizationService + localeAtom
+    local_auth/              # AppLifecycleService + BiometricAuthService
+    notifications/           # OneSignal infrastructure + NotificationRouter
+    form_builder/            # API-driven form widgets
+    ui/                      # DesignTokens, UIKText, AppButton, UIKBottomSheet
+    auth_builder.dart        # Auth side effects — never routing
+  controllers/               # One file per feature — controller class + its atoms
+  data/                      # One file per feature — service class only
+  models/                    # One file per model — plain Dart data classes
+  views/                     # One folder per feature
+  widgets/                   # Global reusable widgets shared across features
+  l10n/                      # Localisation arb files + generated output
+  router.dart                # GoRouter — app-specific, lives at root not core/
+  main.dart
+```
+
+## File placement rules
+Given a feature called **rewards**:
+| What | Where |
+|---|---|
+| Data model | `lib/models/reward_model.dart` |
+| API service | `lib/data/rewards_service.dart` |
+| Controller + atoms | `lib/controllers/rewards_controller.dart` |
+| Main screen | `lib/views/rewards/rewards_screen.dart` |
+| Feature-specific widgets | `lib/views/rewards/widgets/reward_card.dart` |
+| Shared/global widgets | `lib/widgets/` |
+
+**Never** put feature-specific widgets in `lib/widgets/` — they belong in the feature's own `widgets/` folder.
+**Never** put models inside `data/` — all models live in `lib/models/`.
+**Never** create a `lib/pages/` or `lib/screens/` folder — all screens live in `lib/views/`.
+
+## Architecture
+```
+View  →  Controller  →  Service (data/)  →  API
+              ↓
+         atom.emit(result)
+              ↓
+         View rebuilds via atom()
+```
+
+- **Views** call controller methods and render atoms — nothing else
+- **Controllers** plain Dart classes — orchestrate service calls, manage atom state, caching. Atom lives in the same file.
+- **Services** extend `APIRequest`, return `Result<T>` — no logic, just HTTP
+- **Atoms** are the single source of truth — `Atom<T>` for local state, `AsyncAtom<T>` for async data
+- **`core/`** contains reusable infrastructure with zero app-specific knowledge — if you could copy it unchanged to another Flutter project, it belongs in `core/`. If it imports any view, model, or feature, it lives outside.
+- **`router.dart`** lives at `lib/router.dart` — it's app-specific infrastructure, not reusable core
+
+## Core Primitives
+
+### Atom<T>
+Local/UI state. Use `emit()` to update, call directly as widget to render.
+```dart
+final isSelected = Atom(false);
+isSelected.emit(true);
+isSelected((_) => const SelectedIndicator())
+isSelected((_) => const SelectedIndicator(), fallback: const UnselectedIndicator())
+```
+Only use with `Atom<bool>`, `Atom<String>`, `Atom<List>`. Assert catches misuse in debug mode.
+
+### AsyncAtom<T>
+Async/remote data. Wraps `Result<T>`, initializes as `Idle()`. Call directly as widget.
+```dart
+final rewards = AsyncAtom<List<RewardModel>>();
+rewards.emit(Loading());
+rewards.emit(result);
+rewards(success: RewardsList.new, failure: ErrorText.new)
+```
+
+### Widget convention
+Widgets used as constructor references must accept the value as a single positional argument:
+```dart
+class RewardsList extends StatelessWidget {
+  const RewardsList(this.rewards, {super.key});
+  final List<RewardModel> rewards;
+}
+// NOT: const RewardsList({super.key, required this.rewards})
+```
+
+### Result<T>
+```dart
+Idle()            // before any action
+Loading()         // in progress
+Success(value)    // data returned
+Failure(message)  // something went wrong
+Empty()           // request succeeded but no data
+```
+- Never use `Atom<Result<T>>` directly — always use `AsyncAtom<T>`
+- Use `result.errorMessage` to extract error string without casting
+
+## Auth State
+```dart
+sealed class AuthState {}
+class Initial extends AuthState {}       // unknown — triggers checkAuth()
+class Authenticated extends AuthState {}
+class Unauthenticated extends AuthState {}
+class AuthErrorState extends AuthState { final String message; }
+```
+- Interceptor automatically emits `Unauthenticated()` on 401-style responses
+- Never manually check for auth errors in services or controllers
+
+## AuthBuilder & Session Management
+`AuthBuilder` wraps the entire app. Listens to `authState`, handles routing, notifications, atom resets.
+
+Auth check flow:
+```
+App starts / comes to foreground
+  → authState.emit(Initial())
+  → AuthRepository().checkAuth()  ← only called on Initial
+  → emits Authenticated or Unauthenticated
+  → handles routing / notifications / _resetAtoms()
+```
+
+`_resetAtoms()` resets all feature `AsyncAtom`s to `Idle()` on logout.
+No manual registration is required — `AsyncAtom` self-registers automatically.
+
+## Global Rules
+- Do not install packages without confirming first
+- Do not use `setState` for app state
+- Do not put business logic in views
+- Do not use `BuildContext` in controllers or services
+- Never recreate primitives from `core/`
+- Atom variables use no suffix: `final isSelected = Atom(false)` not `final isSelectedAtom`
+- Never use `print()` — use `debugLog()`
+
+## Workflow
+- Read existing files before editing — never assume file contents
+- For tasks with 3+ steps, write a plan first
+- After any correction, log the pattern in `tasks/lessons.md`
+- Never mark a task complete without verifying it runs
+- Ask: "Would a senior Flutter developer approve this?"
