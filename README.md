@@ -47,6 +47,7 @@ core/
   local_auth/              # AppLifecycleService + BiometricAuthService
   notifications/           # OneSignal infrastructure + NotificationRouter
   form_builder/            # Data-driven form system
+  app_config/              # Backend-driven navigation + feature flags
   ui/                      # DesignTokens, UIKText, UIKButton, UIKitBottomSheet
   auth_builder.dart        # Auth side effects — never routing
 ```
@@ -414,3 +415,105 @@ NotificationRouter.configure({
 ```
 
 Notification type metadata — icon, colour — lives on the enum as getters. No utility class needed. `notification.type.icon` and `notification.type.color` work everywhere.
+
+---
+
+## App Config
+
+Backend-driven navigation and feature flags. The entire navigation structure of the app — bottom tabs, drawer items, nested routes — is defined by a single API response. No hardcoded route lists in the client. The backend controls what each user sees.
+
+### `AppConfig`
+
+Fetched once after login, stored in a global `AsyncAtom`, reset to `Idle()` on logout. Immutable after construction.
+
+```dart
+final appConfig = AsyncAtom<AppConfig>();
+
+class AppConfig {
+  final GlobalSettings settings;      // feature flags
+  final List<NavItem> navigation;     // top-level nav items
+  
+  NavItem get firstPage => navigation.first;
+  NavItem? findByRoute(String route) { ... }
+}
+```
+
+**`GlobalSettings`** — infrastructure feature flags returned by the backend:
+
+```dart
+enablePushNotifications
+enableIntercom
+enableLocationTracking
+enableNotificationsCentre
+```
+
+These drive conditional setup in `AuthBuilder` — if `enablePushNotifications` is false, OneSignal never initializes. No environment variables, no build flavors — the backend decides per user.
+
+**`NavItem`** — a single navigation destination:
+
+```dart
+class NavItem {
+  final String route;           // '/home', '/rewards', or a full URL
+  final String label;           // 'Home', 'Rewards'
+  final String? icon;           // icon identifier
+  final NavType type;           // route | webpage | custom
+  final Map<String, dynamic> config;  // raw backend config
+  final List<NavItem> links;    // nested items (for drawer sections)
+}
+```
+
+**`NavType`** determines how the router handles the item:
+
+- **`route`** — standard app route, handled by GoRouter
+- **`webpage`** — opens in an in-app WebView
+- **`custom`** — triggers a registered handler (e.g., open external browser, deep link to another app)
+
+### Usage
+
+**Fetch on login** — called from `AuthBuilder` after `Authenticated`:
+
+```dart
+// AuthBuilder after Authenticated
+await appConfigController.load();
+```
+
+**Access in the router** — redirect to the first page after config loads:
+
+```dart
+redirect: (context, state) {
+  final config = appConfigController.current;
+  if (authState.value is Authenticated && config != null) {
+    return config.firstPage.route;
+  }
+  // ...
+}
+```
+
+**Render navigation** — bottom nav or drawer:
+
+```dart
+appConfig(
+  success: (config) => BottomNavigationBar(
+    items: config.navigation.map((item) => BottomNavigationBarItem(
+      icon: Icon(item.icon),
+      label: item.label,
+    )).toList(),
+  ),
+)
+```
+
+**Custom route handlers** — register once in `main()` for non-standard nav types:
+
+```dart
+AppNavigator.registerHandler('open_external', (navItem) async {
+  await launchUrl(Uri.parse(navItem.route));
+});
+
+AppNavigator.registerHandler('contact_support', (navItem) async {
+  Intercom.displayMessenger();
+});
+```
+
+When a user taps a `NavItem` with `type: custom`, the router calls the registered handler. Handlers are cleared on logout automatically via `appConfigController.onLogout()`.
+
+**Why this matters:** a single backend change can add a new tab, reorder navigation, or A/B test different structures — without releasing a new app version. The client is a rendering engine for whatever structure the backend defines.
