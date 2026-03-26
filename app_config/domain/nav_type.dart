@@ -6,7 +6,4 @@ enum NavType {
 
   /// Opens a URL in an in-app WebView
   webpage,
-
-  /// Handled by a custom injected handler — see AppNavigator.registerCustomHandler()
-  custom,
 }

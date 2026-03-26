@@ -34,6 +34,21 @@ class AppConfig {
     }
   }
 
+  factory AppConfig.fromJson(dynamic json) => AppConfig(
+    settings: GlobalSettings.fromJson(json),
+    navigation: NavItem.fromJsonList(json['pages']),
+  );
+
   @override
   String toString() => 'AppConfig(settings: $settings, navigation: ${navigation.length} items)';
+
+  factory AppConfig.empty() => const AppConfig(
+    settings: GlobalSettings(
+      enablePushNotifications: false,
+      enableIntercom: false,
+      enableLocationTracking: false,
+      enableNotificationsCentre: false,
+    ),
+    navigation: [],
+  );
 }
